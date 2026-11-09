@@ -1,0 +1,45 @@
+{
+  "name": "auditor-engine",
+  "version": "0.1.0",
+  "description": "The engine behind search-auditor and ai-search-auditor: crawl a site once, run a rule set, score it and render the report in Markdown or JSON.",
+  "keywords": [
+    "site audit",
+    "crawler",
+    "seo",
+    "audit engine",
+    "robots.txt",
+    "sitemap",
+    "report"
+  ],
+  "license": "MIT",
+  "author": "Aleksandr Bibikov (https://albibikov.com)",
+  "homepage": "https://github.com/a-bibikov/auditor-engine#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/a-bibikov/auditor-engine.git"
+  },
+  "bugs": "https://github.com/a-bibikov/auditor-engine/issues",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.0"
+  }
+}

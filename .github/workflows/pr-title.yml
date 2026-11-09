@@ -1,0 +1,49 @@
+# Pull requests into dev (and straight into main): the branch name sets the release type.
+#   feat/…  → «feat: …»  minor release (0.1 → 0.2)
+#   fix/…   → «fix: …»   patch release
+#   docs/…  → «docs: …»  patch release
+#   chore/…, ci/…, test/…, refactor/… → no release
+# The workflow writes the prefix into the PR title; squash merge turns the title into the commit on dev,
+# and release-please on main reads those commits when dev is merged into main.
+# A breaking change: put «!» before the colon in the title yourself («feat!: …»), it is kept.
+name: PR title from branch
+on:
+  pull_request:
+    branches: [dev, main]
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  title:
+    # dev → main merges and release-please PRs keep their own titles.
+    if: ${{ github.head_ref != 'dev' && !startsWith(github.head_ref, 'release-please--') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set the conventional prefix from the branch name
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.head_ref }}
+          TITLE: ${{ github.event.pull_request.title }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          type="${BRANCH%%/*}"
+          case "$type" in
+            feat|fix|docs|chore|ci|test|refactor|perf) ;;
+            *)
+              echo "::error::Branch «$BRANCH» must start with feat/, fix/, docs/, chore/, ci/, test/, refactor/ or perf/ (see CONTRIBUTING.md)"
+              exit 1 ;;
+          esac
+          # Keep the author's «!» for breaking changes, drop any other prefix, then add the right one.
+          bang=""
+          if [[ "$TITLE" =~ ^[A-Za-z]+(\([^\)]*\))?!: ]]; then bang="!"; fi
+          rest="$(printf '%s' "$TITLE" | sed -E 's/^[A-Za-z]+(\([^)]*\))?!?:[[:space:]]*//')"
+          want="${type}${bang}: ${rest}"
+          if [ "$TITLE" != "$want" ]; then
+            gh api -X PATCH "repos/$REPO/pulls/$PR" -f title="$want" >/dev/null
+            echo "Title set to: $want"
+          else
+            echo "Title is fine: $TITLE"
+          fi
