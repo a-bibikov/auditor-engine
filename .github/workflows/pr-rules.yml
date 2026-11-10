@@ -1,0 +1,66 @@
+# The rules for pull requests.
+#
+#   into main: only from dev («Create a merge commit»). Releases are made from what dev brings.
+#   into dev:  only from a task branch type/issue-N, merged with «Squash and merge»:
+#
+#     feat/issue-12   → «feat: …»  minor release
+#     fix/issue-12    → «fix: …»   patch release (bug/issue-12 is the same as fix)
+#     docs/issue-12   → «docs: …»  patch release
+#     chore/, ci/, test/, refactor/, perf/ + issue-N → no release
+#
+# The workflow writes the type into the PR title (the squash commit on dev takes the title, and the release reads
+# those commits) and «Closes #N» into the description, so merging closes the issue. A breaking change keeps the «!»
+# written in the title («feat!: …»); it still raises only minor: a major version is made by hand.
+name: PR rules
+on:
+  pull_request:
+    branches: [dev, main]
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the branch, set the title and link the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.base_ref }}
+          BRANCH: ${{ github.head_ref }}
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$BASE" = "main" ]; then
+            if [ "$BRANCH" != "dev" ]; then
+              echo "::error::Only dev is merged into main. Open this pull request into dev (see CONTRIBUTING.md)."
+              exit 1
+            fi
+            echo "dev → main: fine"
+            exit 0
+          fi
+
+          if [[ ! "$BRANCH" =~ ^(feat|fix|bug|docs|chore|ci|test|refactor|perf)/issue-([0-9]+)$ ]]; then
+            echo "::error::Branch «$BRANCH» must be type/issue-N, for example feat/issue-12 or fix/issue-7 (see CONTRIBUTING.md)."
+            exit 1
+          fi
+          type="${BASH_REMATCH[1]}"; issue="${BASH_REMATCH[2]}"
+          [ "$type" = "bug" ] && type="fix"
+
+          # Keep the author's «!» for breaking changes, drop any other prefix, then add the right one.
+          bang=""
+          if [[ "$TITLE" =~ ^[A-Za-z]+(\([^\)]*\))?!: ]]; then bang="!"; fi
+          rest="$(printf '%s' "$TITLE" | sed -E 's/^[A-Za-z]+(\([^)]*\))?!?:[[:space:]]*//')"
+          want="${type}${bang}: ${rest}"
+          if [ "$TITLE" != "$want" ]; then
+            gh api -X PATCH "repos/$REPO/pulls/$PR" -f title="$want" >/dev/null
+            echo "Title set to: $want"
+          fi
+
+          if ! printf '%s' "$BODY" | grep -qiE "(close[sd]?|fix(e[sd])?|resolve[sd]?) #$issue\b"; then
+            gh api -X PATCH "repos/$REPO/pulls/$PR" -f body="$(printf '%s\n\nCloses #%s' "$BODY" "$issue")" >/dev/null
+            echo "Linked issue #$issue"
+          fi

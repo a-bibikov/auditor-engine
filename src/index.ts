@@ -10,6 +10,7 @@ export { runRules, type ReportRule, type RuleStatus, type RuleTexts, type RunRes
 export { scoreOf, penaltyOf, pagesOf, placesOf, type Score, type ScoreContext } from "./score.ts";
 export { toMarkdown, codeTags, type MarkdownOptions } from "./report.ts";
 export { toJSON, type JsonFinding, type JsonReport } from "./json.ts";
+export { toBadge, toBadgeEndpoint, badgeMarkdown, badgeMessage, textWidth, GRADE_COLORS, type BadgeOptions, type BadgeScore } from "./badge.ts";
 export { fetchUrl, pool, toPublic, toTarget, isSameSite, DEFAULT_UA, type Origins, type FetchOptions } from "./fetch.ts";
 export { parsePage, textContent, visibleText, countWords, decode, attrs, flattenJsonLd, types as jsonLdTypes } from "./html.ts";
 export { parseRobots } from "./robots.ts";

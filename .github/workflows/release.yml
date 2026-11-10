@@ -1,64 +1,89 @@
-# Releases: work goes to dev through PRs from feat/, fix/, docs/… branches (pr-title.yml sets the commit type),
-# dev is merged into main. release-please reads conventional commits on main and keeps a release PR
-# with the next version and the CHANGELOG. Merging that PR tags vX.Y.Z, creates the GitHub Release,
-# publishes to npm through trusted publishing (no token).
+# Releases. Work goes to dev through PRs from feat/issue-N, fix/issue-N, docs/issue-N… (pr-rules.yml),
+# dev is merged into main. Every push to main — that is, every merge from dev — runs this workflow:
 #
-# If publishing failed, run this workflow by hand (Actions → Release → Run workflow) with the existing tag:
-# it publishes that tag without making a new release. npm's trusted publisher must point at this file, release.yml.
+#   scripts/release.mjs reads the commits since the last tag: feat → minor, fix and docs → patch, nothing else
+#   releases. If there is a release, a commit with the version in package.json is made next to main (main itself
+#   only ever gets merges from dev), tagged vX.Y.Z, the GitHub Release is created, the package is published to npm
+#   through trusted publishing (no token), and the floating major tag (v0, v1…) moves for the GitHub Action.
+#
+# A major version is made by hand only: Actions → Release → Run workflow on main with «major» on.
+# If publishing failed, run it with «tag» set to the existing tag: it publishes that tag and makes nothing new.
+# npm's trusted publisher must point at this file, release.yml.
 name: Release
 on:
   push:
     branches: [main]
   workflow_dispatch:
     inputs:
+      major:
+        description: Release the next major version (X+1.0.0) from main
+        type: boolean
+        default: false
       tag:
-        description: Existing tag to publish to npm, e.g. v0.1.3
-        required: true
+        description: Or publish an existing tag again, e.g. v0.7.0 (when publishing failed)
+        required: false
 
 permissions:
   contents: write
-  pull-requests: write
   id-token: write
+
+# Two merges in a row release one after the other, never at once.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - id: release
-        if: ${{ github.event_name == 'push' }}
-        uses: googleapis/release-please-action@v4
+      - uses: actions/checkout@v4
         with:
-          # Releases are made from main only, whichever branch the workflow runs on.
-          target-branch: main
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
-
-      - id: target
-        name: What to publish
-        env:
-          EVENT: ${{ github.event_name }}
-          INPUT_TAG: ${{ inputs.tag }}
-          CREATED: ${{ steps.release.outputs.release_created }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
-        run: |
-          if [ "$EVENT" = "workflow_dispatch" ]; then tag="$INPUT_TAG"
-          elif [ "$CREATED" = "true" ]; then tag="$RELEASE_TAG"
-          else echo "publish=false" >> "$GITHUB_OUTPUT"; exit 0; fi
-          { echo "publish=true"; echo "tag=$tag"; } >> "$GITHUB_OUTPUT"
-          echo "Publishing $tag"
-
-      - if: ${{ steps.target.outputs.publish == 'true' }}
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ steps.target.outputs.tag }}
+          ref: main
           fetch-depth: 0
 
       # No registry-url here on purpose: it writes an .npmrc with a placeholder token, and when trusted publishing
       # fails npm falls back to that token and answers a vague 404. Without it a failure says what is wrong.
-      - if: ${{ steps.target.outputs.publish == 'true' }}
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
+
+      - id: next
+        name: Next version
+        if: ${{ !inputs.tag }}
+        run: node scripts/release.mjs ${{ inputs.major && '--major' || '' }}
+
+      - name: Release commit and tag
+        if: ${{ steps.next.outputs.release == 'true' }}
+        env:
+          VERSION: ${{ steps.next.outputs.version }}
+          TAG: ${{ steps.next.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          git commit -am "chore: release $TAG"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"
+
+      - name: GitHub Release
+        if: ${{ steps.next.outputs.release == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.next.outputs.tag }}
+        run: gh release create "$TAG" --verify-tag --title "$TAG" --notes-file release-notes.md
+
+      - id: target
+        name: What to publish
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          NEW_TAG: ${{ steps.next.outputs.tag }}
+        run: |
+          tag="${INPUT_TAG:-$NEW_TAG}"
+          if [ -z "$tag" ]; then echo "publish=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          major="${tag#v}"; major="${major%%.*}"
+          { echo "publish=true"; echo "tag=$tag"; echo "major=$major"; } >> "$GITHUB_OUTPUT"
+          git checkout --quiet "$tag"
+          echo "Publishing $tag"
 
       # Trusted publishing needs npm 11.5.1 or later; take the latest rather than rely on the one bundled with Node.
       - if: ${{ steps.target.outputs.publish == 'true' }}
@@ -75,16 +100,9 @@ jobs:
           set -o pipefail
           npm publish --access public --loglevel verbose 2>&1 | grep -viE "^npm (verbose|info) (cli|title|argv|logfile|cache|config|os|node|npm |cwd|exit)"
 
-      # The release PR changes package.json and CHANGELOG.md on main only: bring them back to dev,
-      # so the next release starts from the right version. A conflict stops here and needs a manual merge.
-      - if: ${{ github.event_name == 'push' && steps.target.outputs.publish == 'true' }}
-        name: Sync the release back to dev
+      # Only a repository with a GitHub Action has users pinned to v0, v1…
+      - if: ${{ steps.target.outputs.publish == 'true' && hashFiles('action.yml') != '' }}
+        name: Move the major tag for the GitHub Action
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git ls-remote --exit-code --heads origin dev >/dev/null; then
-            git fetch origin main dev
-            git checkout -B dev origin/dev
-            git merge --no-edit origin/main
-            git push origin dev
-          fi
+          git tag -f "v${{ steps.target.outputs.major }}" "${{ steps.target.outputs.tag }}"
+          git push -f origin "v${{ steps.target.outputs.major }}"
