@@ -1,6 +1,6 @@
 {
   "name": "auditor-engine",
-  "version": "0.1.0",
+  "version": "0.0.0-development",
   "description": "The engine behind search-auditor and ai-search-auditor: crawl a site once, run a rule set, score it and render the report in Markdown or JSON.",
   "keywords": [
     "site audit",
