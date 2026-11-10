@@ -14,6 +14,7 @@ You need it to build your own audit. To audit a site, use one of the two package
 - **Run a rule set.** Each rule says when it applies; one that cannot run on a site is reported as «not checked» with the reason, never as passed. Each rule gets its status, counts, and the number of audited pages and other addresses it found something on.
 - **Score.** 100 minus 15 for each check with an error and 5 for each check with a warning; a warning on at least half of the audited pages costs 10. A ≥ 90, B ≥ 80, C ≥ 70, D ≥ 60, F below; if fewer than two thirds of the checks could run, the grade is capped at B.
 - **Report.** Markdown: the score, what to do first, a table per group, one table of recommendations. Fits a terminal width or stays plain for files and CI summaries. JSON: every finding with the title of its check, why it is a problem and how to fix it. English and Russian.
+- **Badge.** The score as a flat SVG badge colored by grade, or as JSON for a shields.io endpoint.
 
 ## A rule set
 
@@ -66,6 +67,7 @@ A rule set that needs more than the pages (linked pages, images, llms.txt) reque
 | `runRules`, `finder` | Running a rule set, building findings |
 | `scoreOf`, `penaltyOf`, `pagesOf`, `placesOf` | The score |
 | `toMarkdown`, `toJSON`, `codeTags` | The report |
+| `toBadge`, `toBadgeEndpoint`, `badgeMarkdown`, `GRADE_COLORS` | A score badge: SVG, shields.io endpoint JSON, the README line |
 | `fetchUrl`, `pool`, `toPublic`, `toTarget`, `isSameSite`, `DEFAULT_UA` | Requests |
 | `parsePage`, `textContent`, `visibleText`, `countWords`, `decode`, `attrs`, `flattenJsonLd`, `jsonLdTypes` | HTML |
 | `parseRobots`, `parseSitemap` | robots.txt and sitemaps |
