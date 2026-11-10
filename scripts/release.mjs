@@ -11,7 +11,7 @@
  * No dependencies: plain git and Node.
  */
 import { execFileSync } from "node:child_process";
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
 const out = (values) => {
@@ -25,7 +25,20 @@ const tags = git("tag", "--list", "v*", "--sort=-v:refname")
   .split("\n")
   .filter((t) => /^v\d+\.\d+\.\d+$/.test(t));
 const last = tags[0];
-const [major, minor, patch] = last ? last.slice(1).split(".").map(Number) : [0, 0, 0];
+
+// What npm already has: without a tag the count starts from it, and a version npm has is never released again.
+const name = JSON.parse(readFileSync("package.json", "utf8")).name;
+const npmView = (spec) => {
+  try {
+    return execFileSync("npm", ["view", spec, "version"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return "";
+  }
+};
+const published = last ? "" : npmView(name);
+if (!last && published) console.log(`No release tag yet: counting from ${published}, the version on npm.`);
+const base = last ? last.slice(1) : published || "0.0.0";
+const [major, minor, patch] = base.split(".").map(Number);
 
 // A release commit sits next to main, not on it: its parent is where main was, so count from there. Older tags
 // (release-please) sit on main itself: count from the tag.
@@ -73,6 +86,13 @@ if (!version) {
 }
 
 const tag = `v${version}`;
+if (npmView(`${name}@${version}`) === version) {
+  console.error(
+    `::error::${name}@${version} is already on npm, so the last release has no tag here. ` +
+      `Tag the commit it was made from (git tag v${version} <commit> && git push origin v${version}) and run Release again.`,
+  );
+  process.exit(1);
+}
 const repo = process.env.GITHUB_REPOSITORY;
 const section = (title, list) => (list.length ? [`### ${title}`, "", ...list.map((c) => `- ${c.text}`), ""] : []);
 const notes = [
